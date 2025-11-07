@@ -1,0 +1,48 @@
+# NOTICE
+
+## Third-Party Attributions
+
+This project builds upon and extends concepts from the following sources:
+
+### Microsoft DevBlogs Tutorial
+**Title**: Build a RAG application with LangChain and local LLMs powered by Ollama  
+**Source**: https://devblogs.microsoft.com/cosmosdb/build-a-rag-application-with-langchain-and-local-llms-powered-by-ollama/  
+**Copyright**: Microsoft Corporation  
+**License**: Content published under Microsoft Terms of Use
+
+**What we adapted**:
+- Core RAG architecture pattern (retrieval-augmented generation)
+- LangChain + Ollama + Cosmos DB integration approach
+- Vector search implementation concepts
+- Document chunking and embedding strategies
+
+**Our enhancements**:
+- Added FAISS implementation as lightweight alternative
+- Fixed Windows Docker Desktop networking issues (IP_ADDRESS_OVERRIDE)
+- Created comprehensive documentation (5 markdown files)
+- Organized code into clean project structure (simple/ vs cosmosdb/)
+- Enhanced error handling and configuration management
+- Added interactive chat features (history, clear commands)
+
+### Open Source Dependencies
+
+All Python package dependencies are listed in `requirements.txt`. Key components:
+
+- **LangChain**: MIT License - https://github.com/langchain-ai/langchain
+- **Ollama**: MIT License - https://github.com/ollama/ollama
+- **FAISS**: MIT License - https://github.com/facebookresearch/faiss
+- **Azure Cosmos DB SDK**: MIT License - https://github.com/Azure/azure-sdk-for-python
+
+### Microsoft Documentation References
+
+The following Microsoft documentation was referenced:
+- Azure Cosmos DB NoSQL Vector Search: https://learn.microsoft.com/azure/cosmos-db/nosql/vector-search
+- LangChain Azure Cosmos DB Integration: https://python.langchain.com/docs/integrations/vectorstores/azurecosmosdb
+
+### Disclaimer
+
+This is an independent implementation inspired by Microsoft's tutorial. It is not an official Microsoft product and is not endorsed by Microsoft Corporation. All trademarks, service marks, and company names are the property of their respective owners.
+
+### Contact
+
+For questions about licensing or attribution, please open an issue in this repository.

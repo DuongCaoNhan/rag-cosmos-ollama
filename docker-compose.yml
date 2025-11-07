@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  cosmos-emulator:
+    image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest
+    container_name: cosmos-emulator
+    ports:
+      # Map ports to same ports on host for proper networking
+      - "8081:8081"
+      - "10250-10255:10250-10255"
+    environment:
+      # CRITICAL: This fixes Windows Docker networking issues
+      # Without this, Python SDK will try to connect to internal Docker IP (172.17.0.2)
+      # which is not accessible from Windows host
+      - AZURE_COSMOS_EMULATOR_IP_ADDRESS_OVERRIDE=127.0.0.1
+      
+      # Enable data persistence across container restarts
+      - AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE=true
+      
+      # Number of partitions (10 is recommended for development)
+      - AZURE_COSMOS_EMULATOR_PARTITION_COUNT=10
+    
+    # Optional: Persist data to a volume
+    # volumes:
+    #   - cosmos-data:/data/db
+
+# Uncomment to enable data persistence
+# volumes:
+#   cosmos-data:
