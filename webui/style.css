@@ -1,0 +1,23 @@
+body {margin:0;font-family:system-ui, Arial, sans-serif;background:#111;color:#eee;}
+#app {display:flex;height:100vh;}
+.sidebar {width:280px;background:#1c1f24;padding:16px;overflow-y:auto;border-right:1px solid #2a2f36;}
+.sidebar h1 {font-size:1.2rem;margin-top:0;}
+label {display:block;font-size:.8rem;margin:8px 0;color:#ccc;}
+label input, label select {width:100%;padding:6px;background:#2a2f36;color:#eee;border:1px solid #3a414b;border-radius:4px;}
+button {cursor:pointer;background:#2563eb;color:#fff;border:none;padding:8px 14px;border-radius:4px;font-size:.85rem;}
+button.sample {background:#374151;margin:4px 4px 0 0;}
+button.sample:hover {background:#4b5563;}
+button:hover {background:#1d4ed8;}
+.status {margin-top:8px;font-size:.75rem;padding:6px;border-radius:4px;background:#2a2f36;color:#bbb;}
+.chat-pane {flex:1;display:flex;flex-direction:column;}
+.messages {flex:1;overflow-y:auto;padding:16px;}
+.msg {max-width:840px;margin:0 0 14px;padding:12px 14px;border-radius:10px;line-height:1.4;font-size:.9rem;white-space:pre-wrap;}
+.user {background:#1e3a8a;border:1px solid #1d4ed8;}
+.assistant {background:#1f2937;border:1px solid #374151;}
+.sources {margin-top:8px;padding:8px;background:#111;border:1px solid #333;border-radius:6px;font-size:.7rem;}
+.source-item {margin-bottom:6px;border-bottom:1px dashed #333;padding-bottom:6px;}
+.source-item:last-child {border-bottom:none;}
+.input-row {display:flex;border-top:1px solid #2a2f36;padding:10px;background:#1c1f24;gap:8px;}
+#input {flex:1;resize:vertical;background:#2a2f36;color:#eee;border:1px solid #3a414b;border-radius:4px;padding:8px;font-family:inherit;}
+#sendBtn {align-self:flex-end;height:42px;}
+.meta {color:#888;font-size:.65rem;margin-top:4px;}

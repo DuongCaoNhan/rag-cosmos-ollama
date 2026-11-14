@@ -23,6 +23,13 @@ localRagComosDB/
 │   ├── vector_search.py              # Search Cosmos DB
 │   └── cosmos_rag_chain.py           # RAG chain with Cosmos DB
 │
+├── webui/                     # Static WebUI (served by server.py)
+├── server.py                  # FastAPI: /init, /chat, /health + WebUI
+├── app_gradio.py              # Gradio UI
+├── app.py                     # Streamlit UI
+├── prompts.py                 # Shared prompt template (Gradio)
+├── run_faiss.ps1 / run_cosmos.ps1 / run_test.ps1   # Windows test scripts
+│
 ├── .github/
 │   └── copilot-instructions.md       # AI assistant instructions
 │
@@ -41,7 +48,7 @@ localRagComosDB/
 
 ```
 ┌─────────────────┐
-│  Source URLs    │  Markdown documents from GitHub
+│  Source URLs    │  Microsoft Learn pages (article body only)
 └────────┬────────┘
          │
          ▼
@@ -61,16 +68,16 @@ localRagComosDB/
          ▼
 ┌─────────────────┐
 │  Vector Search  │  simple_vector_search.py
-│  - Query embed  │  ├─ Similarity search (cosine)
+│  - Query embed  │  ├─ Similarity search (L2)
 │  - Top-K match  │  └─ Return scored results
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
 │  RAG Chain      │  simple_rag_chain.py
-│  - Retrieve ctx │  ├─ Get top-5 docs
+│  - Retrieve ctx │  ├─ Get top-K docs (TOP_K)
 │  - Build prompt │  ├─ Add context to question
-│  - Generate ans │  └─ Ollama llama3 response
+│  - Generate ans │  └─ Ollama CHAT_MODEL response
 └─────────────────┘
 ```
 
@@ -78,7 +85,7 @@ localRagComosDB/
 
 ```
 ┌─────────────────┐
-│  Source URLs    │  Markdown documents from GitHub
+│  Source URLs    │  Microsoft Learn pages (article body only)
 └────────┬────────┘
          │
          ▼
@@ -107,11 +114,21 @@ localRagComosDB/
          ▼
 ┌─────────────────┐
 │  RAG Chain      │  cosmosdb/cosmos_rag_chain.py
-│  - Retrieve ctx │  ├─ Get top-5 docs from Cosmos
+│  - Retrieve ctx │  ├─ Get top-K docs from Cosmos
 │  - Build prompt │  ├─ Add context to question
-│  - Generate ans │  └─ Ollama llama3 response
+│  - Generate ans │  └─ Ollama CHAT_MODEL response
 └─────────────────┘
 ```
+
+## User Interfaces
+
+All three UIs build the same chain: retriever (FAISS or Cosmos DB, top-K) → prompt → `ChatOllama`, and show the source chunks with each answer.
+
+| UI | Entry point | Notes |
+|---|---|---|
+| WebUI | `server.py` (FastAPI) + `webui/` | `POST /init` picks the store, `POST /chat` answers, `GET /health`; serves the WebUI at `/` |
+| Gradio | `app_gradio.py` | Radio button to pick the store, then *Initialize* |
+| Streamlit | `app.py` | Store, chat model and top-K in the sidebar; the chain is cached per configuration |
 
 ## Component Details
 
@@ -122,25 +139,26 @@ localRagComosDB/
 - **Usage**: Both document embedding and query embedding
 
 ### Chat Model
-- **Model**: `llama3:8b` (via Ollama)
+- **Model**: `CHAT_MODEL` (via Ollama, default `llama3`)
+- **Context window**: `NUM_CTX` (default 4096, keeps a 7B/8B model inside 8GB VRAM)
 - **Purpose**: Generate natural language responses
 - **Input**: User question + retrieved context documents
 - **Output**: Contextually-aware answer
 
 ### Document Processing
-- **Loader**: LangChain `WebBaseLoader` (fetches markdown from URLs)
+- **Loader**: LangChain `WebBaseLoader` (fetches web pages; a `SoupStrainer` keeps only `<div class="content">`, the article body on Microsoft Learn)
 - **Splitter**: `MarkdownTextSplitter`
   - Chunk size: 1500 characters
   - Chunk overlap: 200 characters
   - Preserves markdown structure (headers, code blocks)
-- **Metadata**: Source URL, chunk index
+- **Metadata**: Source URL
 
 ### Vector Stores
 
 #### FAISS (Simple)
 - **Storage**: Local file (`./vector_store/index.faiss`)
 - **Index Type**: Flat (brute-force, 100% recall)
-- **Similarity**: Cosine distance
+- **Similarity**: L2 (Euclidean) distance, the LangChain FAISS default
 - **Pros**: No external dependencies, fast setup
 - **Cons**: Limited scalability, no cloud backup
 
@@ -151,7 +169,7 @@ localRagComosDB/
   - Data type: `float32`
   - Dimensions: 1024
   - Distance function: `cosine`
-- **Index Type**: `quantizedFlat` or `diskANN` (configurable)
+- **Index Type**: `quantizedFlat` (set in `cosmosdb_vector_store.py`; `diskANN` is also supported by Cosmos DB)
 - **Pros**: Scalable, cloud-native, production-ready
 - **Cons**: Requires Docker emulator or Azure subscription
 
@@ -163,7 +181,7 @@ All configuration is centralized in `.env`:
 ```bash
 # Cosmos DB
 USE_EMULATOR=true                          # true = local, false = cloud
-COSMOS_DB_URL=                             # Cloud connection string (if USE_EMULATOR=false)
+COSMOS_DB_URL=                             # Cloud account endpoint (if USE_EMULATOR=false); auth via DefaultAzureCredential
 DATABASE_NAME=rag_local_llm_db
 CONTAINER_NAME=docs
 
@@ -171,12 +189,13 @@ CONTAINER_NAME=docs
 EMBEDDINGS_MODEL=mxbai-embed-large
 DIMENSIONS=1024
 CHAT_MODEL=llama3
+NUM_CTX=4096                               # Chat model context window
 
 # RAG Parameters
 TOP_K=5                                    # Number of context docs to retrieve
-CHUNK_SIZE=1500
-CHUNK_OVERLAP=200
 ```
+
+Chunk size (1500) and overlap (200) are set in the two `load_data.py` files.
 
 ### Critical Windows Fix
 **Problem**: Cosmos DB emulator advertises internal Docker IP (172.17.0.2), unreachable from Windows host.
@@ -194,13 +213,14 @@ This is already configured in `docker-compose.yml`.
 |-----------|-----------|---------|
 | **LLM Runtime** | Ollama | Local model serving (CPU/GPU) |
 | **Embedding Model** | mxbai-embed-large | Text → 1024-dim vectors |
-| **Chat Model** | llama3:8b | Natural language generation |
+| **Chat Model** | `CHAT_MODEL` (default llama3) | Natural language generation |
 | **Vector DB (Simple)** | FAISS | In-memory/file-based vector search |
 | **Vector DB (Prod)** | Azure Cosmos DB | Cloud-native vector database |
 | **Orchestration** | LangChain | RAG pipeline, document loaders, chains |
-| **Document Loader** | WebBaseLoader | Fetch markdown from URLs |
+| **Document Loader** | WebBaseLoader | Fetch web pages |
 | **Text Splitter** | MarkdownTextSplitter | Chunk markdown intelligently |
 | **Emulator** | Cosmos DB Linux Emulator | Local development (Docker) |
+| **UIs** | FastAPI + static WebUI, Gradio, Streamlit | Chat front-ends (FAISS or Cosmos DB) |
 
 ## Performance Considerations
 
@@ -219,18 +239,14 @@ This is already configured in `docker-compose.yml`.
 - **Trade-offs**: 
   - Smaller chunks → more precise retrieval, less context per chunk
   - Larger chunks → more context, less precise retrieval
-- **Recommendation**: Test with your data, adjust `CHUNK_SIZE` in `.env`
+- **Recommendation**: Test with your data, adjust `chunk_size` in the `load_data.py` files
 
 ## Error Handling Patterns
 
 ### Connection Errors
-```python
-try:
-    cosmos_client = CosmosClient(url, credential)
-except Exception as e:
-    if "172.17.0.2" in str(e):
-        raise ConnectionError("Missing IP_ADDRESS_OVERRIDE env var")
-```
+- `get_instance()` in `cosmosdb_vector_store.py` logs and re-raises connection errors.
+- The UIs catch the error at initialization and show it, so you can start the emulator and initialize again.
+- `Connection to 172.17.0.2 timed out` means the emulator was started without `AZURE_COSMOS_EMULATOR_IP_ADDRESS_OVERRIDE=127.0.0.1`.
 
 ### Model Availability
 ```python

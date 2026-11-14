@@ -23,6 +23,7 @@ This project builds upon and extends concepts from the following sources:
 - Organized code into clean project structure (simple/ vs cosmosdb/)
 - Enhanced error handling and configuration management
 - Added interactive chat features (history, clear commands)
+- Added three UIs (FastAPI WebUI + REST API, Gradio, Streamlit) that switch between FAISS and Cosmos DB
 
 ### Open Source Dependencies
 

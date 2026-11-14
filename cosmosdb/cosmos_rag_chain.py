@@ -2,7 +2,10 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
 
-from langchain_community.llms import Ollama
+from dotenv import load_dotenv
+load_dotenv()
+
+from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
@@ -19,10 +22,10 @@ def create_rag_chain():
     
     # Initialize the vector store
     vector_store = cosmosdb_vector_store.get_instance(create_container=False)
-    retriever = vector_store.as_retriever(search_kwargs={"k": 5})
-    
+    retriever = vector_store.as_retriever(k=int(os.getenv("TOP_K", "5")), search_kwargs={"k": int(os.getenv("TOP_K", "5"))})
+
     # Initialize the LLM
-    llm = Ollama(model=os.getenv("CHAT_MODEL", "llama3"))
+    llm = ChatOllama(model=os.getenv("CHAT_MODEL", "llama3"), num_ctx=int(os.getenv("NUM_CTX", "4096")))
     
     # Create a prompt template
     template = """Use the following pieces of context to answer the question at the end.

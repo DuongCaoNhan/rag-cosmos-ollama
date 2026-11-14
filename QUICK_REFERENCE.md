@@ -28,14 +28,21 @@ python simple/simple_rag_chain.py
 ```
 
 ### Run Cosmos DB Version (Requires Docker)
+```powershell
+# Windows: one script (start emulator, wait until ready, load data, test)
+./run_cosmos.ps1 -LoadData   # first run only
+./run_cosmos.ps1             # later runs
+```
+
+Step by step:
 ```bash
 # 1. Start Cosmos DB emulator
-docker-compose up -d
+docker compose up -d
 
-# 2. Wait ~60 seconds for initialization
-docker logs cosmos-emulator
+# 2. Wait until it is ready (first start can take a few minutes)
+curl -k https://127.0.0.1:8081/_explorer/emulator.pem
 
-# 3. Load data
+# 3. Load data (once)
 python cosmosdb/load_data.py
 
 # 4. Test search
@@ -43,6 +50,13 @@ python cosmosdb/vector_search.py "vector embedding policy"
 
 # 5. Interactive chat
 python cosmosdb/cosmos_rag_chain.py
+```
+
+### Run a UI (FAISS or Cosmos DB, selectable in the UI)
+```bash
+python server.py        # WebUI + REST API -> http://localhost:8000
+python app_gradio.py    # Gradio           -> http://localhost:7860
+streamlit run app.py    # Streamlit        -> http://localhost:8501
 ```
 
 ## 📁 File Reference
@@ -55,26 +69,31 @@ python cosmosdb/cosmos_rag_chain.py
 | `cosmosdb/load_data.py` | Load docs into Cosmos DB | First run, data refresh |
 | `cosmosdb/vector_search.py` | Test Cosmos DB search | Debug retrieval, verify indexing |
 | `cosmosdb/cosmos_rag_chain.py` | Interactive chat (Cosmos DB) | Production-like testing |
-| `.env` | Configuration | Change models, chunk size, top-K |
+| `server.py` + `webui/` | WebUI + REST API (`/init`, `/chat`, `/health`) | Demo, API access |
+| `app_gradio.py` | Gradio UI | Demo |
+| `app.py` | Streamlit UI | Demo |
+| `run_faiss.ps1` / `run_cosmos.ps1` / `run_test.ps1` | Windows test scripts | Quick end-to-end check |
+| `.env` | Configuration | Change models, context size, top-K |
 
 ## 🔧 Common Tasks
 
 ### Change Data Source
 **File**: `simple/simple_load_data.py` or `cosmosdb/load_data.py`
 ```python
-# Add/modify URLs
-urls = [
-    "https://raw.githubusercontent.com/.../your-doc1.md",
-    "https://raw.githubusercontent.com/.../your-doc2.md",
+# Add/modify URLs (the loader keeps only <div class="content">, i.e. the article body of Microsoft Learn pages;
+# change the SoupStrainer in load() for other sites)
+doc_urls = [
+    "https://learn.microsoft.com/en-us/azure/cosmos-db/vector-search",
+    "https://learn.microsoft.com/en-us/azure/cosmos-db/multi-tenancy-vector-search",
 ]
 ```
 
 ### Adjust Chunk Size
-**File**: `.env`
-```bash
-CHUNK_SIZE=1500      # Characters per chunk
-CHUNK_OVERLAP=200    # Overlap between chunks
+**File**: `simple/simple_load_data.py` and `cosmosdb/load_data.py`
+```python
+markdown_splitter = MarkdownTextSplitter(chunk_size=1500, chunk_overlap=200)
 ```
+Reload the data afterwards.
 
 ### Change Retrieval Count
 **File**: `.env`
@@ -85,8 +104,9 @@ TOP_K=5  # Number of context documents (default: 5)
 ### Switch Models
 **File**: `.env`
 ```bash
-EMBEDDINGS_MODEL=mxbai-embed-large  # Or: nomic-embed-text
+EMBEDDINGS_MODEL=mxbai-embed-large  # Or: nomic-embed-text (also set DIMENSIONS and reload data)
 CHAT_MODEL=llama3                   # Or: llama3.1, mistral
+NUM_CTX=4096                        # Lower if Ollama reports "cudaMalloc failed: out of memory"
 ```
 
 Don't forget to pull new models:
@@ -110,13 +130,13 @@ ollama run llama3 "hello"
 ### Manage Docker Emulator
 ```bash
 # Start
-docker-compose up -d
+docker compose up -d
 
-# Stop
-docker-compose down
+# Stop (removes the container and its data)
+docker compose down
 
 # Restart
-docker-compose restart
+docker compose restart
 
 # View logs
 docker logs -f cosmos-emulator
@@ -131,8 +151,28 @@ docker logs -f cosmos-emulator
 ```bash
 # Fix: Make sure docker-compose.yml has:
 # AZURE_COSMOS_EMULATOR_IP_ADDRESS_OVERRIDE=127.0.0.1
-docker-compose down
-docker-compose up -d
+docker compose down
+docker compose up -d
+```
+
+### "Connection refused" / "Connection aborted" (Cosmos DB)
+```bash
+# Emulator not running or not ready yet
+./run_cosmos.ps1          # or: docker compose up -d, then wait
+docker logs cosmos-emulator
+```
+
+### "cudaMalloc failed: out of memory" (Ollama)
+```bash
+# Lower the context window in .env, or use a smaller CHAT_MODEL
+NUM_CTX=2048
+```
+
+### "WinError 10013" when starting a UI
+```bash
+# Port is in a range reserved by Windows (Hyper-V/WSL)
+netsh int ipv4 show excludedportrange protocol=tcp
+streamlit run app.py --server.port 9501
 ```
 
 ### "Ollama not found"
@@ -209,6 +249,7 @@ python cosmosdb/load_data.py
 | `SETUP.md` | Detailed setup instructions |
 | `ARCHITECTURE.md` | System design, data flow, components |
 | `CHANGELOG.md` | Version history, roadmap |
+| `GUI_README.md` | Streamlit UI guide |
 | `QUICK_REFERENCE.md` | This file - commands, tips |
 
 ## 🌐 Useful URLs
@@ -237,11 +278,11 @@ python simple/simple_rag_chain.py
 ### Production Deployment Prep
 ```bash
 # 1. Test with emulator
-docker-compose up -d
+docker compose up -d
 python cosmosdb/load_data.py
 python cosmosdb/cosmos_rag_chain.py
 
-# 2. Update .env for cloud
+# 2. Update .env for cloud (auth: DefaultAzureCredential, e.g. `az login`)
 USE_EMULATOR=false
 COSMOS_DB_URL=https://your-account.documents.azure.com:443/
 
@@ -257,7 +298,7 @@ python cosmosdb/vector_search.py "test query"
 ```bash
 # Cosmos DB
 USE_EMULATOR=true                    # true=local, false=cloud
-COSMOS_DB_URL=                       # Cloud connection string
+COSMOS_DB_URL=                       # Cloud account endpoint (https://<account>.documents.azure.com:443/)
 DATABASE_NAME=rag_local_llm_db       # Database name
 CONTAINER_NAME=docs                  # Container name
 
@@ -265,11 +306,10 @@ CONTAINER_NAME=docs                  # Container name
 EMBEDDINGS_MODEL=mxbai-embed-large   # Embedding model
 DIMENSIONS=1024                      # Vector dimensions
 CHAT_MODEL=llama3                    # Chat model
+NUM_CTX=4096                         # Chat model context window
 
 # RAG
 TOP_K=5                              # Context documents
-CHUNK_SIZE=1500                      # Characters per chunk
-CHUNK_OVERLAP=200                    # Chunk overlap
 ```
 
 ## 🔄 Data Refresh
@@ -288,8 +328,8 @@ python simple/simple_load_data.py # Rebuild
 
 # Cosmos DB
 # Delete container in Explorer UI, or:
-docker-compose down               # Reset emulator
-docker-compose up -d
+docker compose down               # Reset emulator
+docker compose up -d
 python cosmosdb/load_data.py      # Reload
 ```
 

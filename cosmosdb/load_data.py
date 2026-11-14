@@ -2,8 +2,12 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from langchain_text_splitters import MarkdownTextSplitter
 from langchain_community.document_loaders import WebBaseLoader
+import bs4
 import cosmosdb_vector_store
 import logging
 from typing import List
@@ -20,7 +24,8 @@ def load(urls: List[str], create_container: bool = True) -> None:
 
     try:
         # Load documents from web
-        loader = WebBaseLoader(urls)
+        # Keep only the article body of Microsoft Learn pages (skip navigation/toolbars)
+        loader = WebBaseLoader(urls, bs_kwargs={"parse_only": bs4.SoupStrainer("div", class_="content")})
         documents = loader.load()
 
         if not documents:
@@ -49,8 +54,9 @@ def load(urls: List[str], create_container: bool = True) -> None:
 
 if __name__ == "__main__":
     doc_urls = [
-        "https://raw.githubusercontent.com/MicrosoftDocs/azure-databases-docs/refs/heads/main/articles/cosmos-db/nosql/vector-search.md",
-        "https://raw.githubusercontent.com/MicrosoftDocs/azure-databases-docs/refs/heads/main/articles/cosmos-db/nosql/multi-tenancy-vector-search.md",
+        # The original raw markdown URLs (MicrosoftDocs/azure-databases-docs) now return 404
+        "https://learn.microsoft.com/en-us/azure/cosmos-db/vector-search",
+        "https://learn.microsoft.com/en-us/azure/cosmos-db/multi-tenancy-vector-search",
     ]
 
     load(urls=doc_urls)

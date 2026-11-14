@@ -73,3 +73,6 @@ debug_*.py
 # OS
 .DS_Store
 Thumbs.db
+
+# Exported Copilot chat session
+copilot_session_a56b03bb.md

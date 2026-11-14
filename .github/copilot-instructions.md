@@ -19,11 +19,11 @@ This is a **Retrieval-Augmented Generation (RAG) application** using local LLMs 
 - **LangChain**: Orchestration framework (vectorstores, chains, document loaders, embedding wrappers)
 
 **Environment Variables** (see `.env.example`):
-- `USE_EMULATOR="true"` or `COSMOS_DB_URL` (cloud connection string)
+- `USE_EMULATOR="true"` or `COSMOS_DB_URL` (cloud account endpoint; auth via `DefaultAzureCredential`)
 - `DATABASE_NAME="rag_local_llm_db"`, `CONTAINER_NAME="docs"`
 - `EMBEDDINGS_MODEL="mxbai-embed-large"`, `DIMENSIONS="1024"`
-- `CHAT_MODEL="llama3"`, `TOP_K=5` (context results to retrieve)
-- `CHUNK_SIZE=1500`, `CHUNK_OVERLAP=200`
+- `CHAT_MODEL="llama3"`, `NUM_CTX=4096` (chat context window), `TOP_K=5` (context results to retrieve)
+- Chunking (1500 chars, 200 overlap) is hard-coded in the two `load_data.py` files
 
 ## File Structure
 
@@ -39,6 +39,11 @@ localRagComosDB/
 │   ├── load_data.py                # Load docs into Cosmos DB
 │   ├── vector_search.py            # Test Cosmos DB search
 │   └── cosmos_rag_chain.py         # Interactive RAG with Cosmos DB
+├── webui/                           # Static WebUI served by server.py
+├── server.py                        # FastAPI: /init, /chat, /health + WebUI
+├── app_gradio.py                    # Gradio UI
+├── app.py                           # Streamlit UI
+├── run_faiss.ps1 / run_cosmos.ps1 / run_test.ps1   # Windows test scripts
 ├── .github/
 │   └── copilot-instructions.md     # This file
 ├── .env.example                     # Environment template
@@ -48,17 +53,18 @@ localRagComosDB/
 ├── SETUP.md                         # Setup guide
 ├── ARCHITECTURE.md                  # System architecture
 ├── CHANGELOG.md                     # Version history
+├── GUI_README.md                    # Streamlit UI guide
 └── QUICK_REFERENCE.md               # Command cheatsheet
 ```
 
 ## Key Patterns & Workflows
 
 ### 1. **Data Loading Workflow**
-- **Input**: Markdown URLs (fetch from GitHub raw content)
+- **Input**: Microsoft Learn page URLs (`doc_urls`); `WebBaseLoader` keeps only `<div class="content">`
 - **Processing**: 
   - Split into chunks (default 1500 chars with 200 overlap via `MarkdownTextSplitter`)
   - Generate embeddings using Ollama `mxbai-embed-large` (1024 dimensions)
-  - Add metadata (source URL, chunk index)
+  - Add metadata (source URL)
 - **Output**: Documents stored in vector database with embeddings
 - **Commands**: 
   - FAISS: `python simple/simple_load_data.py`
@@ -78,8 +84,8 @@ localRagComosDB/
 ### 3. **RAG Chain Flow**
 - `retriever`: Vector search returning top-k docs (default: 5)
 - `prompt_template`: System message + retrieved docs + user query
-- `llm`: Ollama `llama3` model (local inference)
-- `chain`: LangChain Runnable (retriever | prompt | llm | output_parser)
+- `llm`: `ChatOllama(model=CHAT_MODEL, num_ctx=NUM_CTX)` (local inference)
+- `chain`: LangChain Runnable in `cosmos_rag_chain.py`; the UIs use a small `SimpleRAGChain` class that also returns the source documents
 - Interactive commands: `exit` (quit), `clear` (reset history), `history` (view past exchanges)
 - **Commands**:
   - FAISS: `python simple/simple_rag_chain.py`
@@ -111,11 +117,12 @@ cp .env.example .env
 
 ### Run Services (Cosmos DB only)
 ```bash
+# Windows: ./run_cosmos.ps1 -LoadData (first run) starts the emulator, waits, loads data and tests
 # Start Cosmos DB emulator with Docker Compose (includes Windows fix)
-docker-compose up -d
+docker compose up -d
 
-# Wait ~60 seconds for emulator initialization
-docker logs cosmos-emulator
+# Wait until ready (first start can take a few minutes)
+curl -k https://127.0.0.1:8081/_explorer/emulator.pem
 
 # Access Cosmos DB Explorer: https://localhost:8081/_explorer/index.html
 ```
@@ -131,8 +138,8 @@ docker logs cosmos-emulator
 
 **Cosmos DB Version**
 ```bash
-1. docker-compose up -d
-2. python cosmosdb/load_data.py
+1. docker compose up -d
+2. python cosmosdb/load_data.py   # once; re-running duplicates documents
 3. python cosmosdb/vector_search.py "your query"
 4. python cosmosdb/cosmos_rag_chain.py
 ```
@@ -142,7 +149,7 @@ docker logs cosmos-emulator
 - **High**: Core RAG chain must work end-to-end (retriever → embedding → LLM response)
 - **High**: Both FAISS and Cosmos DB implementations must remain in sync
 - **Medium**: Proper error messages, graceful degradation if services unavailable
-- **Medium**: Configurable chunking strategy (chunk size, overlap, separator types)
+- **Medium**: Keep the three UIs (`server.py`, `app_gradio.py`, `app.py`) working with both stores
 - **Low**: UI polish, performance optimization (batching, caching)
 
 ## Testing Strategy
@@ -155,10 +162,13 @@ docker logs cosmos-emulator
 ## Common Pitfalls
 
 1. **Dimension mismatch**: Embedding model output dims must match Cosmos DB schema (1024 for `mxbai-embed-large`)
-2. **Chunking fragmentation**: Too-small chunks lose context; too-large chunks waste space. Tune via `CHUNK_SIZE` and `CHUNK_OVERLAP`
+2. **Chunking fragmentation**: Too-small chunks lose context; too-large chunks waste space. Tune `chunk_size`/`chunk_overlap` in the `load_data.py` files
 3. **Stale embeddings**: Always re-embed after updating chunk strategy or model version
 4. **Connection timeouts**: Emulator requires `AZURE_COSMOS_EMULATOR_IP_ADDRESS_OVERRIDE=127.0.0.1` on Windows
 5. **Import errors**: Files in subfolders use `sys.path.insert(0, os.path.dirname(__file__))` to enable execution from project root
+6. **Top-K with Cosmos DB**: `AzureCosmosDBNoSqlVectorStoreRetriever` reads `k`, not `search_kwargs["k"]`; pass both: `as_retriever(k=top_k, search_kwargs={"k": top_k})`
+7. **Streamlit caching**: `st.cache_resource` ignores arguments whose names start with `_`; do not prefix arguments that must be part of the cache key
+8. **GPU memory**: Ollama's default context can exceed 8GB VRAM; `NUM_CTX` controls it
 
 ## References
 - Original blog post: https://devblogs.microsoft.com/cosmosdb/build-a-rag-application-with-langchain-and-local-llms-powered-by-ollama/

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>RAG Cosmos Ollama WebUI</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <aside class="sidebar">
+      <h1>⚙️ Config</h1>
+      <label>Vector Store
+        <select id="vectorStore">
+          <option>FAISS</option>
+          <option>Cosmos DB</option>
+        </select>
+      </label>
+      <label>Chat Model
+        <input id="chatModel" value="" placeholder="(from .env)" />
+      </label>
+      <label>Top-K
+        <input id="topK" type="number" value="5" min="1" max="10" />
+      </label>
+      <button id="initBtn">Initialize</button>
+      <div id="status" class="status">Not initialized</div>
+      <hr/>
+      <h2>Samples</h2>
+      <div class="samples">
+        <button class="sample" data-q="What is vector search in Cosmos DB?">Vector search?</button>
+        <button class="sample" data-q="Show me an example of a vector embedding policy">Embedding policy?</button>
+        <button class="sample" data-q="What are the different vector index types available?">Index types?</button>
+      </div>
+    </aside>
+    <main class="chat-pane">
+      <div id="messages" class="messages"></div>
+      <div class="input-row">
+        <textarea id="input" rows="2" placeholder="Ask a question..."></textarea>
+        <button id="sendBtn">Send</button>
+      </div>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

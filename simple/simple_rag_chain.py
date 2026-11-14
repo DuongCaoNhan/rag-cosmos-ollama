@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from langchain_ollama import ChatOllama
 import simple_vector_store
 import os
@@ -87,7 +90,7 @@ Question: {query}
 Answer:"""
 
         # Use LLM to generate answer
-        llm = ChatOllama(model=chat_model)
+        llm = ChatOllama(model=chat_model, num_ctx=int(os.getenv("NUM_CTX", "4096")))
         response = llm.invoke(prompt)
         
         return response.content if hasattr(response, 'content') else str(response)

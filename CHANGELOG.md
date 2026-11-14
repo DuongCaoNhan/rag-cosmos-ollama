@@ -2,7 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.0.0] - 2025-01-XX
+## [1.1.0] - 2026-11-14
+
+### Added
+- **Three UIs**, each able to switch between FAISS and Cosmos DB:
+  - WebUI + REST API (`server.py`, `webui/`): `POST /init`, `POST /chat`, `GET /health`
+  - Gradio (`app_gradio.py`)
+  - Streamlit (`app.py`)
+- **Windows scripts**: `run_faiss.ps1`, `run_cosmos.ps1 [-LoadData]`, `run_test.ps1`, `run_test.bat`
+- **`NUM_CTX`** setting (default 4096) so a 7B/8B chat model fits in 8GB VRAM
+
+### Fixed
+- `requirements.txt` was corrupted (interleaved lines) and missed `langchain-azure-ai`, `azure-identity`, `gradio`, `fastapi`, `uvicorn`
+- Selecting Cosmos DB in any UI failed with an import error (`get_vector_store` did not exist in `cosmosdb_vector_store.py`)
+- Cosmos DB ignored the Top-K setting (its retriever reads `k`, not `search_kwargs["k"]`)
+- Gradio always initialized FAISS, whatever store was selected
+- Streamlit ignored changes of store, model and Top-K (cached on underscore-prefixed arguments) and could not retry after a failed initialization
+- CLI scripts now load `.env`; the run scripts no longer override it with hard-coded values
+- `run_cosmos.ps1` no longer deletes the emulator on every run, waits until the emulator is ready instead of sleeping 60 seconds, and can load the data (`-LoadData`)
+- Source documents moved: the raw GitHub markdown URLs return 404, so the loaders now read the Microsoft Learn pages (article body only)
+- Emulator uses 1 partition (faster start)
+- README rewritten (it was corrupted); docs updated
+
+## [1.0.0] - 2025-11-07
 
 ### Initial Release
 
@@ -141,7 +163,7 @@ After:
 - [ ] CI/CD pipeline (GitHub Actions)
 - [ ] Performance benchmarks (FAISS vs Cosmos DB)
 - [ ] Docker image for RAG service
-- [ ] REST API wrapper (FastAPI)
+- [x] REST API wrapper (FastAPI), done in 1.1.0
 
 ### Version 1.2 (Planned)
 - [ ] Multi-document support (PDFs, DOCX)
@@ -155,10 +177,10 @@ After:
 - [ ] Tool calling (function calling)
 - [ ] Hybrid search (keyword + vector)
 - [ ] Re-ranking models
-- [ ] Web UI (Streamlit/Gradio)
+- [x] Web UI (Streamlit/Gradio), done in 1.1.0
 
 ---
 
 **Contributors**: Development team following [Microsoft DevBlogs tutorial](https://devblogs.microsoft.com/cosmosdb/build-a-rag-application-with-langchain-and-local-llms-powered-by-ollama/)
 
-**License**: (Add your license here)
+**License**: MIT (see [LICENSE](LICENSE) and [NOTICE](NOTICE))

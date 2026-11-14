@@ -2,18 +2,19 @@ import streamlit as st
 import sys
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables FIRST before any other imports
+load_dotenv()
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from simple.simple_vector_store import get_vector_store
-from langchain_ollama import OllamaLLM
-from langchain.chains import RetrievalQA
-from langchain.prompts import PromptTemplate
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
+from langchain_ollama import ChatOllama
+from langchain_core.prompts import PromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
 
 # Page config
 st.set_page_config(
@@ -49,6 +50,69 @@ st.markdown("""
         padding: 1rem;
         border-radius: 5px;
         margin-top: 1rem;
+    }
+    /* Error messages only */
+    .stAlert, .stException {
+        background-color: #ffebee !important;
+        color: #d32f2f !important;
+        border: 2px solid #f44336 !important;
+        padding: 1rem !important;
+    }
+    
+    /* Force text color in chat messages */
+    .stChatMessage {
+        color: #1a1a1a !important;
+    }
+    
+    .stChatMessage p, .stChatMessage div, .stChatMessage span {
+        color: #1a1a1a !important;
+    }
+    
+    /* User messages - Blue background */
+    .stChatMessage[data-testid="user-message"] {
+        background-color: #e3f2fd !important;
+        border-left: 4px solid #2196f3 !important;
+        padding: 1rem !important;
+    }
+    
+    /* Assistant messages - White background with border */
+    .stChatMessage[data-testid="assistant-message"] {
+        background-color: #ffffff !important;
+        border-left: 4px solid #4caf50 !important;
+        padding: 1rem !important;
+        border: 1px solid #e0e0e0 !important;
+    }
+    
+    /* Fix code blocks - better contrast */
+    .stChatMessage pre, .stChatMessage code {
+        background-color: #1e1e1e !important;
+        color: #d4d4d4 !important;
+        border: 1px solid #444 !important;
+    }
+    
+    /* Code block syntax highlighting */
+    .stChatMessage pre code {
+        color: #d4d4d4 !important;
+    }
+    
+    /* Inline code */
+    .stChatMessage code {
+        background-color: #2d2d2d !important;
+        color: #e6db74 !important;
+        padding: 2px 6px !important;
+        border-radius: 3px !important;
+    }
+    
+    /* Chat input */
+    .stChatInput textarea {
+        color: #000 !important;
+        background-color: #fff !important;
+    }
+    
+    /* Remove red styling from normal content */
+    .element-container .stMarkdown {
+        background-color: transparent !important;
+        border: none !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -118,22 +182,21 @@ if "rag_chain" not in st.session_state:
 
 # Initialize RAG chain
 @st.cache_resource
-def initialize_rag_chain(_vector_store_type, _chat_model, _top_k):
-    """Initialize RAG chain with caching"""
-    try:
-        # Get vector store
-        if _vector_store_type.startswith("FAISS"):
-            vector_store = get_vector_store()
-        else:
-            # Import Cosmos DB vector store
-            from cosmosdb.cosmosdb_vector_store import get_vector_store as get_cosmos_vector_store
-            vector_store = get_cosmos_vector_store()
-        
-        # Create retriever
-        retriever = vector_store.as_retriever(search_kwargs={"k": _top_k})
-        
-        # Create prompt template
-        template = """You are a helpful AI assistant that answers questions based on the provided context.
+def initialize_rag_chain(vector_store_type, chat_model, top_k):
+    """Initialize RAG chain with caching (exceptions are not cached, so failures can be retried)"""
+    # Get vector store
+    if vector_store_type.startswith("FAISS"):
+        vector_store = get_vector_store()
+    else:
+        # Import Cosmos DB vector store
+        from cosmosdb.cosmosdb_vector_store import get_vector_store as get_cosmos_vector_store
+        vector_store = get_cosmos_vector_store()
+
+    # Create retriever
+    retriever = vector_store.as_retriever(k=top_k, search_kwargs={"k": top_k})  # Cosmos retriever reads k, FAISS reads search_kwargs
+
+    # Create prompt template
+    template = """You are a helpful AI assistant that answers questions based on the provided context.
 Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer.
 
 Context:
@@ -142,34 +205,55 @@ Context:
 Question: {question}
 
 Answer: """
-        
-        prompt = PromptTemplate(template=template, input_variables=["context", "question"])
-        
-        # Create LLM
-        llm = OllamaLLM(model=_chat_model)
-        
-        # Create RAG chain
-        chain = RetrievalQA.from_chain_type(
-            llm=llm,
-            chain_type="stuff",
-            retriever=retriever,
-            return_source_documents=True,
-            chain_type_kwargs={"prompt": prompt}
-        )
-        
-        return chain
-    except Exception as e:
-        st.error(f"Error initializing RAG chain: {str(e)}")
-        return None
 
-# Initialize chain if not already done
-if st.session_state.rag_chain is None:
+    prompt = PromptTemplate(template=template, input_variables=["context", "question"])
+
+    # Create LLM
+    llm = ChatOllama(model=chat_model, num_ctx=int(os.getenv("NUM_CTX", "4096")))
+
+    # Create simple chain
+    def format_docs(docs):
+        return "\n\n".join(doc.page_content for doc in docs)
+
+    # Simple retrieval chain
+    class SimpleRAGChain:
+        def __init__(self, retriever, llm, prompt):
+            self.retriever = retriever
+            self.llm = llm
+            self.prompt = prompt
+
+        def __call__(self, inputs):
+            query = inputs.get("query", "")
+            docs = self.retriever.invoke(query)  # Changed from get_relevant_documents to invoke
+            context = format_docs(docs)
+            prompt_text = self.prompt.format(context=context, question=query)
+            response = self.llm.invoke(prompt_text)
+            return {
+                "result": response.content if hasattr(response, 'content') else str(response),
+                "source_documents": docs
+            }
+
+    chain = SimpleRAGChain(retriever, llm, prompt)
+
+    return chain
+
+# Initialize chain if not already done or if settings changed
+current_config = f"{vector_store_type}_{chat_model}_{top_k}"
+if "last_config" not in st.session_state:
+    st.session_state.last_config = None
+
+if st.session_state.rag_chain is None or st.session_state.last_config != current_config:
     with st.spinner("🔄 Initializing RAG chain..."):
-        st.session_state.rag_chain = initialize_rag_chain(
-            vector_store_type,
-            chat_model,
-            top_k
-        )
+        try:
+            st.session_state.rag_chain = initialize_rag_chain(
+                vector_store_type,
+                chat_model,
+                top_k
+            )
+        except Exception as e:
+            st.session_state.rag_chain = None
+            st.error(f"Error initializing RAG chain: {str(e)}")
+        st.session_state.last_config = current_config
         if st.session_state.rag_chain:
             st.success("✅ RAG chain initialized successfully!")
 
@@ -189,78 +273,70 @@ for message in st.session_state.messages:
                         st.caption(f"Metadata: {doc.metadata}")
                     st.divider()
 
-# Sample questions
-st.markdown("**💡 Sample Questions:**")
-col1, col2, col3 = st.columns(3)
+# Only show sample questions if not currently processing
+if not hasattr(st.session_state, 'current_question'):
+    # Sample questions
+    st.markdown("**💡 Sample Questions:**")
+    col1, col2, col3 = st.columns(3)
 
-with col1:
-    if st.button("What is vector search?"):
-        st.session_state.current_question = "What is vector search in Cosmos DB?"
+    with col1:
+        if st.button("What is vector search?"):
+            st.session_state.current_question = "What is vector search in Cosmos DB?"
+            st.rerun()
 
-with col2:
-    if st.button("Vector embedding policy?"):
-        st.session_state.current_question = "Show me an example of a vector embedding policy"
+    with col2:
+        if st.button("Vector embedding policy?"):
+            st.session_state.current_question = "Show me an example of a vector embedding policy"
+            st.rerun()
 
-with col3:
-    if st.button("Index types?"):
-        st.session_state.current_question = "What are the different vector index types available?"
+    with col3:
+        if st.button("Index types?"):
+            st.session_state.current_question = "What are the different vector index types available?"
+            st.rerun()
 
 # Chat input
 if prompt := st.chat_input("Ask a question about the documents..."):
     st.session_state.current_question = prompt
+    st.rerun()
 
-# Process question
+# Process question (only if not already processed)
 if hasattr(st.session_state, 'current_question') and st.session_state.current_question:
     question = st.session_state.current_question
     
-    # Add user message
-    st.session_state.messages.append({"role": "user", "content": question})
+    # Check if this question is already in messages (avoid duplicate processing)
+    if not st.session_state.messages or st.session_state.messages[-1].get("content") != question:
+        # Add user message
+        st.session_state.messages.append({"role": "user", "content": question})
+        
+        # Generate response
+        if st.session_state.rag_chain:
+            try:
+                result = st.session_state.rag_chain({"query": question})
+                answer = result["result"]
+                sources = result.get("source_documents", [])
+                
+                # Add to history
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": answer,
+                    "sources": sources
+                })
+                
+            except Exception as e:
+                import traceback
+                error_msg = f"Error: {str(e)}"
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": error_msg
+                })
+        else:
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": "RAG chain not initialized. Please check your configuration."
+            })
     
-    # Display user message
-    with st.chat_message("user"):
-        st.markdown(question)
-    
-    # Generate response
-    if st.session_state.rag_chain:
-        with st.chat_message("assistant"):
-            with st.spinner("🤔 Thinking..."):
-                try:
-                    result = st.session_state.rag_chain({"query": question})
-                    answer = result["result"]
-                    sources = result.get("source_documents", [])
-                    
-                    # Display answer
-                    st.markdown(answer)
-                    
-                    # Display sources
-                    if sources:
-                        with st.expander("📚 Source Documents"):
-                            for i, doc in enumerate(sources, 1):
-                                st.markdown(f"**Source {i}:**")
-                                st.text(doc.page_content[:300] + "..." if len(doc.page_content) > 300 else doc.page_content)
-                                if doc.metadata:
-                                    st.caption(f"Metadata: {doc.metadata}")
-                                st.divider()
-                    
-                    # Add to history
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": answer,
-                        "sources": sources
-                    })
-                    
-                except Exception as e:
-                    error_msg = f"❌ Error: {str(e)}"
-                    st.error(error_msg)
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": error_msg
-                    })
-    else:
-        st.error("RAG chain not initialized. Please check your configuration.")
-    
-    # Clear current question
-    delattr(st.session_state, 'current_question')
+    # Clear current question and rerun to display
+    del st.session_state.current_question
     st.rerun()
 
 # Footer

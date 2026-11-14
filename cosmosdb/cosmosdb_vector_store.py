@@ -111,3 +111,8 @@ def get_instance(create_container: bool = False) -> AzureCosmosDBNoSqlVectorSear
             f"Failed to create AzureCosmosDBNoSqlVectorSearch instance: {str(e)}"
         )
         raise
+
+
+def get_vector_store() -> AzureCosmosDBNoSqlVectorSearch:
+    """Get the existing Cosmos DB vector store (run load_data.py first)."""
+    return get_instance(create_container=False)
